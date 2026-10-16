@@ -1,0 +1,26 @@
+# Local secrets and overrides
+.env
+.env.*
+!.env.example
+
+# Frontend
+node_modules/
+.pnpm-store/
+.svelte-kit/
+apps/web/build/
+apps/web/dist/
+apps/web/src/lib/api/generated/
+
+# Backend
+apps/api/target/
+
+# Local PostgreSQL data and generated files
+database/data/
+*.log
+*.pid
+
+# Operating system / editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
