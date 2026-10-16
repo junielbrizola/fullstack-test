@@ -1,0 +1,30 @@
+{
+  "name": "coderockr-investments-web",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
+  "engines": {
+    "node": ">=24.21.0 <25"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "npm run check && vite build",
+    "start": "node build",
+    "check": "npm run api:types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --threshold warning",
+    "api:types": "openapi-ts"
+  },
+  "dependencies": {
+    "@sveltejs/kit": "3.0.0",
+    "svelte": "5.57.1"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "6.0.0",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@hey-api/openapi-ts": "0.99.0",
+    "svelte-check": "4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.4"
+  }
+}
