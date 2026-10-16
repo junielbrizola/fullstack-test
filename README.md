@@ -1,111 +1,106 @@
-# Fullstack Test Project <img src="https://raw.githubusercontent.com/Coderockr/fullstack-test/refs/heads/main/coderockr.banner.svg" align="right" height="50px" />
+# Coderockr Investment Management
 
-You should see this challenge as an opportunity to create an application following modern development best practices (given the stack of your choice), but also feel free to use your own architecture preferences (coding standards, code organization, third-party libraries, etc). It’s perfectly fine to use vanilla code or any framework or libraries.
+Implementação do [desafio Fullstack da Coderockr](https://github.com/Coderockr/fullstack-test), com uma interface web para criar, consultar e resgatar investimentos. O Figma fornecido serve como referência visual para as jornadas de lista, detalhe, criação e resgate.
 
-## Scope
+Referências visuais do desafio: [design no Figma](https://www.figma.com/design/jkilpjx9Q6hZnnCBHZcAWG/Coderockr-Fullstack---Test?node-id=0-1&p=f) e [protótipo](https://www.figma.com/proto/jkilpjx9Q6hZnnCBHZcAWG/Coderockr-Fullstack---Test?node-id=1-2&p=f&t=thQWSMxSHxCJTtAs-0&scaling=scale-down-width&content-scaling=fixed&page-id=0%3A1). Os quadros de lista, criação e resgate foram inspecionados e orientam a estrutura e a hierarquia visual da interface.
 
-In this challenge you should build a **fullstack application** (API + UI) for an application that stores and manages investments, it should have the following features:
+## Stack
 
-### Backend (API)
+- **Web:** Svelte 5, SvelteKit 3, TypeScript estrito e `adapter-node`, em serviço Docker independente.
+- **API:** Java 25, Quarkus 3.40.1, Quarkus REST, Mutiny e cliente PostgreSQL reativo. A aplicação usa JVM fast-jar e SQL preparado.
+- **Dados:** PostgreSQL 18.6 e migrações Flyway versionadas.
+- **Ambiente local:** Docker Compose com serviços web, API, banco, migração e aplicação de privilégios. As portas ficam em `127.0.0.1`.
 
-1. __Creation__ of an investment with an owner, a creation date and an amount.
-   1. The creation date of an investment can be today or a date in the past.
-   2. An investment should not be or become negative.
-2. __View__ of an investment with its initial amount and expected balance.
-   1. Expected balance should be the sum of the invested amount and the [gains][].
-   2. If an investment was already withdrawn then the balance must reflect the gains of that investment
-3. __Withdrawal__ of a investment.
-   1. The withdraw will always be the sum of the initial amount and its gains,
-      partial withdrawn is not supported.
-   2. The withdrawal date must be informmed by the user, and it can be a date in the past or today, but can't happen before the investment creation or the future.
-   3. [Taxes][taxes] need to be applied to the withdrawals before showing the final value.
-4. __List__ of a person's investments
-   1. This list should have pagination.
+SvelteKit mantém interface e API web em processos separados, com SSR em Node. Quarkus foi escolhido para API Java com I/O PostgreSQL assíncrono e consultas explícitas. PostgreSQL mantém integridade relacional, datas civis e valores exatos; `pg_stat_statements` fornece estatísticas locais para orientar otimização posterior. As escolhas priorizam uma base enxuta e mensurável, sem alegação de benchmark ou de que uma tecnologia seja universalmente a mais rápida.
 
-### Frontend (UI)
+A arquitetura evita ponto flutuante para dinheiro: a API usa strings decimais, os valores de domínio usam `BigDecimal` e o acumulador mensal trabalha em centavos inteiros com `BigInteger`. O principal usa `NUMERIC(19,2)`; resultados calculados usam `NUMERIC` sem limite artificial de precisão. Os períodos contam aniversários mensais completos, com juros compostos de 0,52% arredondados a centavos por mês. Criação e resgate têm chaves idempotentes para repetir chamadas ambíguas sem duplicar operações. O código e o modelo não alegam desempenho medido.
 
-1. __List__ of investments
-   - Display all investments with basic information (owner, date, amount, current balance, status)
-2. __View__ of a single investment
-   - Display detailed information including gains and final balance
-3. __Create__ investment form
-   - Allow users to create a new investment
-4. __Withdrawal__ action
-   - Allow users to perform a withdrawal and visualize the final taxed amount
+## Requisitos locais
 
-### Gain Calculation
+- Docker Engine com Docker Compose v2.
+- A porta `3000` para a interface e `8080` para a API; a porta `5432` é publicada somente em loopback para ferramentas locais.
 
-The investment will pay 0.52% every month in the same day of the investment creation.
+## Preparar e iniciar
 
-Given that the gain is paid every month, it should be treated as [compound gain][], which means that every new period (month) the amount gained will become part of the investment balance for the next payment.
+Crie os arquivos locais de configuração. Use a mesma senha administrativa para `POSTGRES_PASSWORD` e `FLYWAY_PASSWORD`, e a mesma senha restrita da API para `APP_DB_PASSWORD` e `DB_PASSWORD`; as duas senhas devem ser diferentes:
 
-### Taxation
+```sh
+cp infra/local/postgres.env.example infra/local/postgres.env
+cp infra/local/migration.env.example infra/local/migration.env
+cp infra/local/api.env.example infra/local/api.env
+```
 
-When money is withdrawn, tax is triggered. Taxes apply only to the gain portion of the money withdrawn. For example, if the initial investment was 1000.00, the current balance is 1200.00, then the taxes will be applied to the 200.00.
+Configure `POSTGRES_PASSWORD` e `APP_DB_PASSWORD` em `infra/local/postgres.env`, `FLYWAY_PASSWORD` em `infra/local/migration.env` e `DB_PASSWORD` em `infra/local/api.env`, mantendo os valores correspondentes conforme os comentários nos exemplos. Esses arquivos são ignorados pelo Git.
 
-The tax percentage changes according to the age of the investment:
-* If it is less than one year old, the percentage will be 22.5% (tax = 45.00).
-* If it is between one and two years old, the percentage will be 18.5% (tax = 37.00).
-* If older than two years, the percentage will be 15% (tax = 30.00).
+Opcionalmente, copie `.env.example` para `.env` na raiz do Compose e defina `BUSINESS_TIME_ZONE`. O mesmo valor configura o relógio da API e os limites de data da interface; o padrão é `America/Sao_Paulo`.
 
-## Design Reference
+Inicie os serviços na raiz:
 
-Use the following Figma as a visual and structural reference for the frontend interface:
+```sh
+docker compose up --build
+```
 
-- Figma: https://www.figma.com/design/jkilpjx9Q6hZnnCBHZcAWG/Coderockr-Fullstack---Test?node-id=0-1&p=f&t=thQWSMxSHxCJTtAs-0
-- Prototype: https://www.figma.com/proto/jkilpjx9Q6hZnnCBHZcAWG/Coderockr-Fullstack---Test?node-id=1-2&p=f&t=thQWSMxSHxCJTtAs-0&scaling=scale-down-width&content-scaling=fixed&page-id=0%3A1
+- Interface: <http://localhost:3000>
+- API: <http://localhost:8080/api/v1/investments>
+- Especificação OpenAPI: [`docs/api/openapi.yaml`](docs/api/openapi.yaml)
 
-__NOTE:__ The layout will be evaluated, but not strictly against the provided design. You can use it as a guideline for structure and organization. Feel free to be creative and enhance the interface with your own ideas, such as visual effects, animations, transitions between screens, and responsive behavior. You may also use UI libraries or create your own components.
+O serviço Flyway espera o banco ficar saudável. A API só inicia depois da migração e da concessão de `SELECT`/`INSERT` nas tabelas de negócio e `UPDATE` somente na coluna `investment.created_at`, necessário para o lock transacional `SELECT ... FOR UPDATE`. O adapter não atualiza essa coluna. `docker compose down` mantém o volume `postgres_data`; remover dados locais exige remover explicitamente esse volume.
 
-## Requirements
-1. Create project using any technology of your preference. It’s perfectly OK to use vanilla code or any framework or libraries;
-2. Although you can use as many dependencies as you want, you should manage them wisely;
-3. It is not necessary to send the notification emails, however, the code required for that would be welcome;
-4. The API must be documented in some way;
-5. Use [Conventional Commits](https://www.conventionalcommits.org/) for commit messages throughout the development process;
+## Funcionalidades
 
-## Deliverables
-The project source code and dependencies should be made available in GitHub. Here are the steps you should follow:
-1. Fork this repository to your GitHub account (create an account if you don't have one, you will need it working with us).
-2. Create a "development" branch and commit the code to it. Do not push the code to the main branch.
-3. Include a README file that describes:
-   - Special build instructions, if any
-   - List of third-party libraries used and short description of why/how they were used
-   - A link to the API documentation.
-4. Once the work is complete, create a pull request from "development" into "main" and send us the link.
-5. Avoid using huge commits hiding your progress. Feel free to work on a branch and use `git rebase` to adjust your commits before submitting the final version.
-6. Create a "screenshots" sub-folder and include at least two screenshots of the app.
+- Lista paginada, filtros inclusivos de data de criação, filtro por correspondência exata do titular, saldo esperado e estado do investimento.
+- Detalhe com principal, ganhos compostos, data de referência e histórico do resgate.
+- Criação com titular, data de hoje ou passada no formato ISO local, dentro do intervalo finito de `DATE` do PostgreSQL, e valor não negativo.
+- Prévia e confirmação de resgate integral em data permitida, com bruto, ganho, alíquota, imposto e líquido.
+- Estados de carregamento, vazio, erro, validação, conflito e resultado incerto; a interface persiste a chave e a data de resgate pendentes na sessão e reconcilia o resultado antes de permitir o replay.
 
-## Coding Standards
-When working on the project be as clean and consistent as possible.
+## Documentação
 
-## Project Deadline
-Ideally you'd finish the test project in 5 days. It shouldn't take you longer than a entire week.
+- Contrato HTTP: [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
+- Configuração local e papéis do banco: [`infra/README.md`](infra/README.md) e [`database/README.md`](database/README.md).
+- Backend e suas dependências: [`apps/api/README.md`](apps/api/README.md).
+- Web e suas dependências: [`apps/web/README.md`](apps/web/README.md).
 
-## Quality Assurance
-Use the following checklist to ensure high quality of the project.
+As dependências diretas e transitivas do frontend estão fixadas em `apps/web/package.json` e `apps/web/package-lock.json`. O build da imagem web executa a análise Svelte/TypeScript e a compilação de produção. Os testes da API estão em `apps/api/src/test`.
 
-### General
-- First of all, the application should run without errors.
-- Are all requirements set above met?
-- Is coding style consistent?
-- The API is well documented?
-- The API has unit tests?
-- Is the backend and frontend deploy-independent?
+## Bibliotecas de terceiros
 
-## Submission
-1. A link to the Github repository.
-2. Briefly describe how you decided on the tools that you used.
+### Web
 
-## Have Fun Coding 🤘
-- This challenge description is intentionally vague in some aspects, but if you need assistance feel free to ask for help.
-- If any of the seems out of your current level, you may skip it, but remember to tell us about it in the pull request.
+- **Svelte / SvelteKit:** componentes reativos, rotas, renderização no servidor e integração com Vite.
+- **`@sveltejs/adapter-node`:** servidor Node independente para o contêiner web.
+- **TypeScript:** tipos estritos para rotas, formulário e respostas da API.
+- **`@hey-api/openapi-ts`:** geração apenas de tipos TypeScript do contrato OpenAPI via script `api:types`.
+- **`svelte-check`:** análise estática de Svelte e TypeScript via script `check`.
 
-## Credits
+A interface usa CSS próprio, elementos semânticos e fontes do sistema; não carrega analytics, fontes ou componentes de terceiros em runtime.
 
-This coding challenge was inspired on [kinvoapp/kinvo-back-end-test](https://github.com/kinvoapp/kinvo-back-end-test/blob/2f17d713de739e309d17a1a74a82c3fd0e66d128/README.md)
+### API
 
-[gains]: #gain-calculation
-[taxes]: #taxation
-[interest]: #interest-calculation
-[compound gain]: https://www.investopedia.com/terms/g/gain.asp
+- **Quarkus REST / Jackson:** endpoints HTTP e serialização JSON.
+- **Mutiny / Reactive PostgreSQL Client:** operações assíncronas e consultas PostgreSQL preparadas.
+- **Hibernate Validator:** validação declarativa dos corpos HTTP.
+- **SmallRye OpenAPI / Health:** especificação e health checks da API.
+- **Micrometer Prometheus Registry:** métricas locais da API no endpoint `/q/metrics`.
+- **JUnit 5 / Quarkus JUnit 5:** testes unitários do domínio e dos casos de uso.
+
+### Banco
+
+- **Flyway:** histórico versionado de migrations SQL.
+- **`pg_stat_statements`:** estatísticas agregadas de consultas; requer preload na inicialização e extensão habilitada no banco.
+- O catálogo de extensões é avaliado em [`database/README.md`](database/README.md). Extensões sem consulta ou regra concreta não são instaladas como tentativa de otimização.
+
+## Limites conhecidos
+
+- O projeto não implementa autenticação. `ownerName` é um filtro/identificador de demonstração e não constitui autorização ou isolamento de dados.
+- O desafio pede ao menos duas screenshots reais em `screenshots/`; essa entrega ainda está pendente.
+- O arredondamento mensal exato percorre cada período completo; o trabalho é agendado no pool de workers para não ocupar o event loop. O contrato aceita datas finitas de `DATE` do PostgreSQL; a composição desde a data mínima até hoje pode percorrer cerca de 80 mil períodos por investimento, e uma página aceita até 100 investimentos. O custo precisa de medição runtime.
+- A criação precisa de um `Idempotency-Key` único por chamada lógica. O navegador mantém a chave e os dados pendentes na sessão até receber uma resposta definitiva.
+- Testes de concorrência contra PostgreSQL continuam pendentes. O build local mais recente e os health checks dos serviços passaram; a validação visual por navegador e as screenshots ainda precisam ser concluídas.
+- O `database/README.md` registra uma comparação local do pool de conexões; uma avaliação ampla de desempenho continua pendente e esses números não representam capacidade de produção.
+
+## Entrega do desafio
+
+- O desenvolvimento deve permanecer na branch `development`; não enviar alterações diretamente para `main`.
+- Usar Conventional Commits durante a implementação.
+- Depois da validação local e da inclusão de pelo menos duas capturas reais em `screenshots/`, abrir um pull request de `development` para `main`.

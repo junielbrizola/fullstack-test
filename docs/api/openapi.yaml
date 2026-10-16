@@ -1,0 +1,272 @@
+openapi: 3.1.0
+info:
+  title: Coderockr Investment API
+  version: 1.0.0
+  description: API de investimentos, cálculos compostos e resgates integrais.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/investments:
+    get:
+      operationId: listInvestments
+      summary: Lista investimentos com paginação por cursor
+      parameters:
+        - name: ownerName
+          in: query
+          required: false
+          description: Correspondência exata com o titular cadastrado, sem distinção de espaços externos.
+          schema: { type: string, maxLength: 100, pattern: '^[^\u0000]*$' }
+        - name: createdFrom
+          in: query
+          required: false
+          description: Data mínima inclusiva de criação; deve ser uma data ISO local finita válida.
+          schema: { $ref: '#/components/schemas/CivilDate' }
+        - name: createdTo
+          in: query
+          required: false
+          description: Data máxima inclusiva de criação; deve ser uma data ISO local finita válida e igual ou posterior a createdFrom.
+          schema: { $ref: '#/components/schemas/CivilDate' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200':
+          description: Página filtrada por titular e intervalo inclusivo de criação, ordenada por data e identificador decrescentes. O cursor permanece dentro do mesmo predicado de filtros.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvestmentPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      operationId: createInvestment
+      summary: Cria ou recupera um investimento pela chave idempotente
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Chave única entre todas as criações. A comparação usa os campos normalizados (ownerName sem espaços externos e initialAmount em centavos); campos normalizados iguais recuperam o recurso. Uma requisição válida com campos normalizados diferentes retorna 409. Validação de formato e regras de domínio ocorre antes da consulta à chave e pode retornar 400 ou 422.
+          schema: { type: string, minLength: 8, maxLength: 100, pattern: '^(?=.*[^\u0009-\u000D\u001C-\u0020\u1680\u2000-\u2006\u2008-\u200A\u2028\u2029\u205F\u3000])[^\x00]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInvestmentRequest' }
+      responses:
+        '201':
+          description: Investimento criado ou recuperado após replay da mesma chave e do mesmo corpo.
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvestmentView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/RuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/investments/{investmentId}:
+    parameters:
+      - $ref: '#/components/parameters/InvestmentId'
+    get:
+      operationId: getInvestment
+      summary: Obtém detalhe e saldo esperado
+      responses:
+        '200':
+          description: Detalhe do investimento.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvestmentView' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/investments/{investmentId}/withdrawal-previews:
+    parameters:
+      - $ref: '#/components/parameters/InvestmentId'
+    post:
+      operationId: previewWithdrawal
+      summary: Calcula prévia sem alterar o investimento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithdrawalDateRequest' }
+      responses:
+        '200':
+          description: Valores que seriam aplicados na data solicitada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WithdrawalResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/RuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/investments/{investmentId}/withdrawals:
+    parameters:
+      - $ref: '#/components/parameters/InvestmentId'
+    post:
+      operationId: withdrawInvestment
+      summary: Confirma resgate integral e persiste o resultado
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Chave única entre todos os resgates; mesma chave e mesmo investimento/data recuperam o resultado persistido.
+          schema: { type: string, minLength: 8, maxLength: 100, pattern: '^(?=.*[^\u0009-\u000D\u001C-\u0020\u1680\u2000-\u2006\u2008-\u200A\u2028\u2029\u205F\u3000])[^\x00]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithdrawalDateRequest' }
+      responses:
+        '200':
+          description: Resgate já realizado com a mesma chave ou confirmado agora.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WithdrawalResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/RuleViolation' }
+        '500': { $ref: '#/components/responses/InternalError' }
+components:
+  parameters:
+    InvestmentId:
+      name: investmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    CivilDate:
+      type: string
+      format: iso-local-date
+      minLength: 10
+      maxLength: 14
+      pattern: '^(?:[0-9]{4}|-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|[1-3][0-9]{3}|4[0-6][0-9]{2}|470[0-9]|471[0-3])|\+(?:[1-9][0-9]{4,5}|[1-4][0-9]{6}|5[0-7][0-9]{5}|58[0-6][0-9]{4}|587[0-3][0-9]{3}|5874[0-7][0-9]{2}|58748(?:[0-8][0-9]|9[0-7])))-(?:0[1-9]|1[0-2])-(?:0[1-9]|1[0-9]|2[0-9]|3[01])(?![\s\S])'
+      description: Data canonica ISO local com ano proleptico (0000 representa 1 a.C.; sinal negativo para anos a.C. e positivo para anos acima de 9999), limitada às datas finitas de PostgreSQL DATE entre -4713-11-24 e +5874897-12-31. A aplicação valida calendário e limites exatos.
+    Money:
+      type: string
+      pattern: '^\d+\.\d{2}$'
+      examples: ['1000.00']
+      description: Resultado monetário não negativo com duas casas; nunca enviar float JSON. O saldo pode superar o limite do principal.
+    Principal:
+      type: string
+      pattern: '^\d{1,17}(\.\d{1,2})?$'
+      examples: ['1000.00']
+      description: Principal inicial não negativo, limitado a NUMERIC(19,2); nunca enviar float JSON.
+    CreateInvestmentRequest:
+      type: object
+      additionalProperties: false
+      required: [ownerName, createdOn, initialAmount]
+      properties:
+        ownerName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^(?=.*[^\u0009-\u000D\u001C-\u0020\u1680\u2000-\u2006\u2008-\u200A\u2028\u2029\u205F\u3000])[^\x00]+$'
+          description: Espaços em branco no início e no fim são removidos antes de persistir e comparar a chave idempotente; um valor composto apenas por espaços é inválido.
+        createdOn:
+          allOf:
+            - { $ref: '#/components/schemas/CivilDate' }
+          description: Data de criação de hoje ou anterior, dentro do intervalo suportado.
+        initialAmount:
+          allOf:
+            - { $ref: '#/components/schemas/Principal' }
+          description: Normalizado a duas casas decimais antes de persistir e comparar a chave idempotente; por exemplo, 1 e 1.00 são equivalentes.
+    WithdrawalDateRequest:
+      type: object
+      additionalProperties: false
+      required: [withdrawnOn]
+      properties:
+        withdrawnOn:
+          allOf:
+            - { $ref: '#/components/schemas/CivilDate' }
+          description: Data civil igual ou posterior à criação do investimento e anterior ou igual à data de negócio atual.
+    InvestmentPage:
+      type: object
+      required: [items, limit]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/InvestmentView' }
+        nextCursor: { type: [string, 'null'] }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+    InvestmentView:
+      type: object
+      required: [id, ownerName, createdOn, initialAmount, asOfDate, completedPeriods, grossBalance, gain, status]
+      properties:
+        id: { type: string, format: uuid }
+        ownerName: { type: string }
+        createdOn: { $ref: '#/components/schemas/CivilDate' }
+        initialAmount: { $ref: '#/components/schemas/Principal' }
+        asOfDate: { $ref: '#/components/schemas/CivilDate' }
+        completedPeriods: { type: integer, minimum: 0 }
+        grossBalance: { $ref: '#/components/schemas/Money' }
+        gain: { $ref: '#/components/schemas/Money' }
+        status: { type: string, enum: [ACTIVE, WITHDRAWN] }
+        withdrawal:
+          oneOf:
+            - { $ref: '#/components/schemas/WithdrawalResult' }
+            - { type: 'null' }
+    WithdrawalResult:
+      type: object
+      required: [investmentId, withdrawnOn, initialAmount, completedPeriods, grossAmount, gainAmount, taxRate, taxAmount, netAmount, calculationVersion]
+      properties:
+        investmentId: { type: string, format: uuid }
+        withdrawnOn: { $ref: '#/components/schemas/CivilDate' }
+        initialAmount: { $ref: '#/components/schemas/Principal' }
+        completedPeriods: { type: integer, minimum: 0 }
+        grossAmount: { $ref: '#/components/schemas/Money' }
+        gainAmount: { $ref: '#/components/schemas/Money' }
+        taxRate:
+          type: string
+          enum: ['0.225', '0.185', '0.15']
+        taxAmount: { $ref: '#/components/schemas/Money' }
+        netAmount: { $ref: '#/components/schemas/Money' }
+        calculationVersion: { type: string, example: '1' }
+    Problem:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+  responses:
+    BadRequest:
+      description: Requisição malformada.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Investimento não encontrado.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflito de estado ou chave idempotente já usada com uma requisição válida incompatível.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RuleViolation:
+      description: Regra de domínio violada.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    InternalError:
+      description: Erro inesperado ao processar a solicitação.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
